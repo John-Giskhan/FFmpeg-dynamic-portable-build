@@ -1,8 +1,12 @@
-name: Build Custom FFmpeg
+name: Build FFmpeg (Commercial/Portable)
+
 on:
   schedule:
-    - cron: '0 0 * * *' # Run every day at midnight
-  workflow_dispatch:      # Allow manual trigger button
+    - cron: '0 0 * * *' # Run daily at midnight UTC
+  workflow_dispatch:      # Allow manual trigger via "Run workflow" button
+
+permissions:
+  contents: write # Required to create Releases
 
 jobs:
   check_version:
@@ -13,20 +17,31 @@ jobs:
     steps:
       - name: Check latest FFmpeg Tag
         id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get latest tag from upstream FFmpeg (e.g., n7.0)
-          LATEST_TAG=$(git ls-remote --tags --refs --sort='v:refname' https://git.ffmpeg.org/ffmpeg.git | tail -n1 | awk -F/ '{print $3}')
+          # 1. Fetch latest tag matching 'n*' (e.g. n7.1) to ignore ancient 'v' tags
+          LATEST_TAG=$(git ls-remote --tags --refs --sort='v:refname' https://git.ffmpeg.org/ffmpeg.git 'refs/tags/n*' | tail -n1 | awk -F/ '{print $3}')
           
-          # Check if we already have a release for this tag in THIS repo
-          HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}\n" https://api.github.com/repos/${{ github.repository }}/releases/tags/$LATEST_TAG)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "Error: Could not find any valid FFmpeg tags."
+            exit 1
+          fi
           
-          if [ "$HTTP_CODE" == "404" ]; then
-            echo "New version found: $LATEST_TAG"
+          echo "Latest Upstream Tag: $LATEST_TAG"
+
+          # 2. Check if this tag already exists in OUR releases
+          HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}\n" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$LATEST_TAG")
+          
+          if [ "$HTTP_CODE" == "200" ]; then
+            echo "Release $LATEST_TAG already exists. Skipping build."
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "New version $LATEST_TAG found. triggering build..."
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "version=$LATEST_TAG" >> $GITHUB_OUTPUT
-          else
-            echo "Version $LATEST_TAG already exists. Skipping."
-            echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
   build:
@@ -35,14 +50,15 @@ jobs:
     runs-on: windows-latest
     
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup MSYS2
+      - name: Setup MSYS2 (UCRT64)
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: true
+          # Note: 'mingw-w64-ucrt-x86_64-opus' is the correct name (no 'lib' prefix)
           install: >-
             base-devel git mingw-w64-ucrt-x86_64-toolchain
             mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-cmake
@@ -52,16 +68,16 @@ jobs:
             mingw-w64-ucrt-x86_64-opus mingw-w64-ucrt-x86_64-libvpx
             mingw-w64-ucrt-x86_64-svt-av1
 
-      - name: Build FFmpeg
+      - name: Compile FFmpeg
         shell: msys2 {0}
         run: |
-          # 1. Clone Source
+          # 1. Clone the specific tag found in the check_version step
           git clone --depth 1 --branch ${{ needs.check_version.outputs.version }} https://git.ffmpeg.org/ffmpeg.git ffmpeg_src
           cd ffmpeg_src
           
-          # 2. Configure (Your EXACT Command)
+          # 2. Configure (Commercial/LGPL/Hardware Optimized Command)
           ./configure --prefix=../install --arch=x86_64 --target-os=mingw64 \
-            --enable-shared --disable-static --disable-everything \
+            --enable-shared --disable-static --disable-programs --disable-doc --disable-debug --disable-everything \
             --disable-gpl --disable-nonfree --enable-version3 \
             --enable-vulkan --enable-ffnvcodec --enable-nvenc --enable-nvdec --enable-cuda-llvm --enable-amf \
             --enable-libshaderc --enable-libplacebo \
@@ -81,25 +97,31 @@ jobs:
             --enable-bsf=h264_mp4toannexb --enable-bsf=hevc_mp4toannexb \
             --enable-protocol=file --enable-protocol=http --enable-protocol=tcp --enable-protocol=pipe
           
-          # 3. Compile
+          # 3. Build & Install
           make -j$(nproc)
           make install
 
-      - name: Bundle Dependencies (Portable)
+      - name: Bundle Dependencies (Make Portable)
         shell: msys2 {0}
         run: |
           mkdir dist
+          # Copy FFmpeg DLLs
           cp install/bin/*.dll dist/
-          # Magic command to find and copy system DLLs (libvulkan, libopus, etc)
-          ldd install/bin/avcodec-*.dll | grep '/ucrt64/bin/' | awk '{print $3}' | xargs -I '{}' cp '{}' dist/
           
-      - name: Zip Artifact
-        run: Compress-Archive -Path dist/* -DestinationPath ffmpeg-portable.zip
+          # Find and copy all system dependencies (vulkan, opus, etc)
+          # We filter for /ucrt64/bin/ to avoid copying system windows files
+          ldd install/bin/avcodec-*.dll | grep '/ucrt64/bin/' | awk '{print $3}' | sort | uniq | xargs -I '{}' cp '{}' dist/
 
-      - name: Create Release
+      - name: Zip Artifacts
+        run: Compress-Archive -Path dist/* -DestinationPath ffmpeg-portable-${{ needs.check_version.outputs.version }}.zip
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.check_version.outputs.version }}
-          files: ffmpeg-portable.zip
+          name: FFmpeg ${{ needs.check_version.outputs.version }} (Portable)
+          files: ffmpeg-portable-${{ needs.check_version.outputs.version }}.zip
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
