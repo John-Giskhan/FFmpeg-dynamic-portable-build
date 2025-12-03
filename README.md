@@ -1,6 +1,6 @@
 # FFmpeg Commercial SDK (Portable & Optimized)
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/John-Giskhan/FFmpeg-dynamic-portable-build/ffmpeg_stable.yml?label=Build)
+![Build Status](https://img.shields.io/github/actions/workflow/status/John-Giskhan/FFmpeg-dynamic-portable-build/build_ffmpeg.yml?label=Build)
 ![License](https://img.shields.io/badge/License-LGPL_v3-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows_x64-blue.svg)
 
