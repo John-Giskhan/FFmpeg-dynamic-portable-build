@@ -75,19 +75,22 @@ jobs:
           git clone --depth 1 --branch ${{ needs.check_version.outputs.version }} https://git.ffmpeg.org/ffmpeg.git ffmpeg_src && cd ffmpeg_src && \
           ./configure --prefix=../install --arch=x86_64 --target-os=mingw64 \
             --enable-shared --disable-static --disable-programs --disable-doc --disable-debug --disable-everything \
-            --disable-gpl --disable-nonfree --enable-version3 --enable-lto \
+            --disable-gpl --disable-nonfree --enable-version3 \
+            --enable-lto \
+            --extra-cflags="-O3 -march=x86-64-v3" \
             --enable-vulkan --enable-ffnvcodec --enable-nvenc --enable-nvdec --enable-amf \
             --enable-libshaderc --enable-libplacebo \
             --enable-encoder=av1_nvenc --enable-encoder=av1_amf --enable-encoder=av1_vulkan --enable-encoder=libsvtav1 \
             --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --enable-encoder=h264_amf --enable-encoder=hevc_amf \
             --enable-encoder=h264_vulkan --enable-encoder=hevc_vulkan \
             --enable-encoder=libvpx_vp9 --enable-encoder=libopus \
-            --enable-decoder=h264 --enable-decoder=hevc --enable-decoder=av1 --enable-decoder=vp9 --enable-decoder=vp8 --enable-decoder=opus \
+            --enable-decoder=h264 --enable-decoder=hevc --enable-decoder=vp9 --enable-decoder=vp8 --enable-decoder=opus \
+            --enable-decoder=av1 --enable-decoder=libdav1d \
             --enable-hwaccel=h264_nvdec --enable-hwaccel=hevc_nvdec --enable-hwaccel=av1_nvdec --enable-hwaccel=vp9_nvdec \
             --enable-hwaccel=h264_vulkan --enable-hwaccel=hevc_vulkan --enable-hwaccel=av1_vulkan --enable-hwaccel=vp9_vulkan \
             --enable-filter=scale --enable-filter=scale_vulkan --enable-filter=format --enable-filter=libplacebo \
             --enable-avcodec --enable-avdevice --enable-avfilter --enable-avformat --enable-swresample --enable-swscale \
-            --enable-libvpx --enable-libopus --enable-libsvtav1 \
+            --enable-libvpx --enable-libopus --enable-libsvtav1 --enable-libdav1d \
             --enable-demuxer=mov --enable-demuxer=matroska --enable-demuxer=webm --enable-demuxer=image2 --enable-demuxer=ogg \
             --enable-muxer=mp4 --enable-muxer=matroska --enable-muxer=webm --enable-muxer=hls --enable-muxer=dash --enable-muxer=mpegts --enable-muxer=image2 --enable-muxer=ogg \
             --enable-parser=av1 --enable-parser=vp9 --enable-parser=vp8 --enable-parser=opus --enable-parser=h264 --enable-parser=hevc \
