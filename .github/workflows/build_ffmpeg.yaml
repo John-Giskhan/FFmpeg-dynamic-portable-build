@@ -20,8 +20,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Fetch tags, sort by version smart-sorting, and filter for strict 'nX.Y' format
-          # This ensures we get 'n7.1' and ignore random text tags or ancient 'v' tags.
+          # Fetch tags, filter for strict 'n7.1' style, and sort by version
           LATEST_TAG=$(git ls-remote --tags --refs --sort='v:refname' https://git.ffmpeg.org/ffmpeg.git 'refs/tags/n*' \
             | awk -F/ '{print $3}' \
             | grep -E '^n[0-9]+\.[0-9]+(\.[0-9]+)?$' \
@@ -34,13 +33,13 @@ jobs:
           
           echo "Latest Stable Upstream: $LATEST_TAG"
 
-          # 2. Check if we already released this version
+          # Check if we already released this version
           HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}\n" \
             -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/$LATEST_TAG")
           
           if [ "$HTTP_CODE" == "200" ]; then
-            echo "We already have a build for $LATEST_TAG. Sleeping."
+            echo "We already have a build for $LATEST_TAG. Skipping."
             echo "should_build=false" >> $GITHUB_OUTPUT
           else
             echo "New stable version $LATEST_TAG detected. Starting build..."
@@ -62,7 +61,6 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          # Installs dependencies. Note the fix for 'opus' naming.
           install: >-
             base-devel git mingw-w64-ucrt-x86_64-toolchain
             mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-cmake
@@ -75,16 +73,11 @@ jobs:
       - name: Compile FFmpeg
         shell: msys2 {0}
         run: |
-          # 1. Clone the specific stable tag
-          echo "Cloning ${{ needs.check_version.outputs.version }}..."
-          git clone --depth 1 --branch ${{ needs.check_version.outputs.version }} https://git.ffmpeg.org/ffmpeg.git ffmpeg_src
-          cd ffmpeg_src
-          
-          # 2. Configure (Commercial/Portable/Hardware Optimized)
+          git clone --depth 1 --branch ${{ needs.check_version.outputs.version }} https://git.ffmpeg.org/ffmpeg.git ffmpeg_src && cd ffmpeg_src && \
           ./configure --prefix=../install --arch=x86_64 --target-os=mingw64 \
             --enable-shared --disable-static --disable-programs --disable-doc --disable-debug --disable-everything \
             --disable-gpl --disable-nonfree --enable-version3 \
-            --enable-vulkan --enable-ffnvcodec --enable-nvenc --enable-nvdec --enable-cuda-llvm --enable-amf \
+            --enable-vulkan --enable-ffnvcodec --enable-nvenc --enable-nvdec --enable-amf \
             --enable-libshaderc --enable-libplacebo \
             --enable-encoder=av1_nvenc --enable-encoder=av1_amf --enable-encoder=av1_vulkan --enable-encoder=libsvtav1 \
             --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --enable-encoder=h264_amf --enable-encoder=hevc_amf \
@@ -93,17 +86,15 @@ jobs:
             --enable-decoder=h264 --enable-decoder=hevc --enable-decoder=av1 --enable-decoder=vp9 --enable-decoder=vp8 --enable-decoder=opus \
             --enable-hwaccel=h264_nvdec --enable-hwaccel=hevc_nvdec --enable-hwaccel=av1_nvdec --enable-hwaccel=vp9_nvdec \
             --enable-hwaccel=h264_vulkan --enable-hwaccel=hevc_vulkan --enable-hwaccel=av1_vulkan --enable-hwaccel=vp9_vulkan \
-            --enable-filter=scale --enable-filter=scale_cuda --enable-filter=scale_vulkan --enable-filter=format --enable-filter=libplacebo \
+            --enable-filter=scale --enable-filter=scale_vulkan --enable-filter=format --enable-filter=libplacebo \
             --enable-avcodec --enable-avdevice --enable-avfilter --enable-avformat --enable-swresample --enable-swscale \
             --enable-libvpx --enable-libopus --enable-libsvtav1 \
             --enable-demuxer=mov --enable-demuxer=matroska --enable-demuxer=webm --enable-demuxer=image2 --enable-demuxer=ogg \
             --enable-muxer=mp4 --enable-muxer=matroska --enable-muxer=webm --enable-muxer=hls --enable-muxer=dash --enable-muxer=mpegts --enable-muxer=image2 --enable-muxer=ogg \
             --enable-parser=av1 --enable-parser=vp9 --enable-parser=vp8 --enable-parser=opus --enable-parser=h264 --enable-parser=hevc \
             --enable-bsf=h264_mp4toannexb --enable-bsf=hevc_mp4toannexb \
-            --enable-protocol=file --enable-protocol=http --enable-protocol=tcp --enable-protocol=pipe
-          
-          # 3. Build
-          make -j$(nproc)
+            --enable-protocol=file --enable-protocol=http --enable-protocol=tcp --enable-protocol=pipe && \
+          make -j$(nproc) && \
           make install
 
       - name: Smart Bundle (Dependency Fix)
@@ -111,7 +102,7 @@ jobs:
         run: |
           mkdir dist
           cp install/bin/*.dll dist/
-          # Portable Magic: Finds system DLLs (like libopus-0.dll) and copies them
+          # Finds system DLLs (vulkan, opus, etc) and copies them
           ldd install/bin/avcodec-*.dll | grep '/ucrt64/bin/' | awk '{print $3}' | sort | uniq | xargs -I '{}' cp '{}' dist/
 
       - name: Zip Artifacts
