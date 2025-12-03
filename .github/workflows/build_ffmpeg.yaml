@@ -75,7 +75,7 @@ jobs:
           git clone --depth 1 --branch ${{ needs.check_version.outputs.version }} https://git.ffmpeg.org/ffmpeg.git ffmpeg_src && cd ffmpeg_src && \
           ./configure --prefix=../install --arch=x86_64 --target-os=mingw64 \
             --enable-shared --disable-static --disable-programs --disable-doc --disable-debug --disable-everything \
-            --disable-gpl --disable-nonfree --enable-version3 \
+            --disable-gpl --disable-nonfree --enable-version3 --enable-lto \
             --enable-vulkan --enable-ffnvcodec --enable-nvenc --enable-nvdec --enable-amf \
             --enable-libshaderc --enable-libplacebo \
             --enable-encoder=av1_nvenc --enable-encoder=av1_amf --enable-encoder=av1_vulkan --enable-encoder=libsvtav1 \
