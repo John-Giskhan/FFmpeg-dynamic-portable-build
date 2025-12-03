@@ -2,8 +2,8 @@ name: Build FFmpeg SDK (Stable)
 
 on:
   schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+    - cron: '0 0 * * *' # Checks daily at midnight
+  workflow_dispatch:      # Allows manual testing
 
 permissions:
   contents: write
@@ -20,27 +20,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fetch tags, filter for 'n7.1' style, sort versions
+          # 1. Fetch tags, filtering for 'n7.1' style
           LATEST_TAG=$(git ls-remote --tags --refs --sort='v:refname' https://git.ffmpeg.org/ffmpeg.git 'refs/tags/n*' \
             | awk -F/ '{print $3}' \
             | grep -E '^n[0-9]+\.[0-9]+(\.[0-9]+)?$' \
             | tail -n1)
           
           if [ -z "$LATEST_TAG" ]; then
-            echo "Error: Could not find a valid stable FFmpeg tag."
+            echo "Error: Could not find tag."
             exit 1
           fi
           
-          # Check if release exists
+          # 2. Ask GitHub if we already released this version
           HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}\n" \
             -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/$LATEST_TAG")
           
           if [ "$HTTP_CODE" == "200" ]; then
-            echo "Build exists for $LATEST_TAG. Skipping."
+            echo "✅ Release $LATEST_TAG exists. SKIPPING BUILD."
             echo "should_build=false" >> $GITHUB_OUTPUT
           else
-            echo "New version $LATEST_TAG. Building..."
+            echo "🚀 New version $LATEST_TAG found. STARTING BUILD."
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "version=$LATEST_TAG" >> $GITHUB_OUTPUT
           fi
@@ -54,11 +54,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MSYS2 (UCRT64)
+      - name: Setup MSYS2 (Cached)
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: true
+          cache: true
           install: >-
             base-devel git mingw-w64-ucrt-x86_64-toolchain
             mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-cmake
@@ -102,24 +103,15 @@ jobs:
           echo "=== CONFIG.LOG ==="
           cat ffmpeg_src/ffbuild/config.log || echo "config.log not found"
 
-      - name: Package SDK (Headers + DLLs + Libs)
+      - name: Package SDK
         shell: msys2 {0}
         run: |
           mkdir -p dist/bin dist/include dist/lib
-          
-          # 1. Copy Headers (From make install)
           cp -r install/include/* dist/include/
-          
-          # 2. Copy DLLs (From make install)
           cp install/bin/*.dll dist/bin/
-          
-          # 3. Smart Bundle
-          # Finds system DLLs (vulkan, opus) and copies them to bin/
+          # Smart Bundle (DLL Dependencies)
           ldd install/bin/avcodec-*.dll | grep '/ucrt64/bin/' | awk '{print $3}' | sort | uniq | xargs -I '{}' cp '{}' dist/bin/
-          
-          # 4. MSVC Linker Fix
-          # Copies the MSVC-compatible .lib files generated in the source tree
-          echo "Copying MSVC .lib files..."
+          # MSVC Libs
           cp ffmpeg_src/libavcodec/avcodec.lib       dist/lib/
           cp ffmpeg_src/libavdevice/avdevice.lib     dist/lib/
           cp ffmpeg_src/libavfilter/avfilter.lib     dist/lib/
