@@ -96,13 +96,6 @@ jobs:
           make -j$(nproc) && \
           make install
 
-      - name: 🔍 PRINT LOGS ON FAILURE
-        if: failure()
-        shell: msys2 {0}
-        run: |
-          echo "=== CONFIG.LOG ==="
-          cat ffmpeg_src/ffbuild/config.log || echo "config.log not found"
-
       - name: Package SDK
         shell: msys2 {0}
         run: |
@@ -110,7 +103,7 @@ jobs:
           cp -r install/include/* dist/include/
           cp install/bin/*.dll dist/bin/
           # Smart Bundle (DLL Dependencies)
-          ldd install/bin/avcodec-*.dll | grep '/ucrt64/bin/' | awk '{print $3}' | sort | uniq | xargs -I '{}' cp '{}' dist/bin/
+          ldd install/bin/*.dll | grep '/ucrt64/bin/' | awk '{print $3}' | sort | uniq | xargs -I '{}' cp '{}' dist/bin/
           # MSVC Libs
           cp ffmpeg_src/libavcodec/avcodec.lib       dist/lib/
           cp ffmpeg_src/libavdevice/avdevice.lib     dist/lib/
