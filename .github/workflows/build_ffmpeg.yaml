@@ -1,12 +1,12 @@
-name: Build FFmpeg (Latest Stable)
+name: Build FFmpeg SDK (Stable)
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Check daily at midnight UTC
-  workflow_dispatch:      # Manual trigger
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 permissions:
-  contents: write # Required to publish Releases
+  contents: write
 
 jobs:
   check_version:
@@ -20,7 +20,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fetch tags, filter for strict 'n7.1' style, and sort by version
+          # Fetch tags, filter for 'n7.1' style, sort versions
           LATEST_TAG=$(git ls-remote --tags --refs --sort='v:refname' https://git.ffmpeg.org/ffmpeg.git 'refs/tags/n*' \
             | awk -F/ '{print $3}' \
             | grep -E '^n[0-9]+\.[0-9]+(\.[0-9]+)?$' \
@@ -31,18 +31,16 @@ jobs:
             exit 1
           fi
           
-          echo "Latest Stable Upstream: $LATEST_TAG"
-
-          # Check if we already released this version
+          # Check if release exists
           HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}\n" \
             -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/$LATEST_TAG")
           
           if [ "$HTTP_CODE" == "200" ]; then
-            echo "We already have a build for $LATEST_TAG. Skipping."
+            echo "Build exists for $LATEST_TAG. Skipping."
             echo "should_build=false" >> $GITHUB_OUTPUT
           else
-            echo "New stable version $LATEST_TAG detected. Starting build..."
+            echo "New version $LATEST_TAG. Building..."
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "version=$LATEST_TAG" >> $GITHUB_OUTPUT
           fi
@@ -53,7 +51,7 @@ jobs:
     runs-on: windows-latest
     
     steps:
-      - name: Checkout Repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup MSYS2 (UCRT64)
@@ -97,23 +95,48 @@ jobs:
           make -j$(nproc) && \
           make install
 
-      - name: Smart Bundle (Dependency Fix)
+      - name: 🔍 PRINT LOGS ON FAILURE
+        if: failure()
         shell: msys2 {0}
         run: |
-          mkdir dist
-          cp install/bin/*.dll dist/
-          # Finds system DLLs (vulkan, opus, etc) and copies them
-          ldd install/bin/avcodec-*.dll | grep '/ucrt64/bin/' | awk '{print $3}' | sort | uniq | xargs -I '{}' cp '{}' dist/
+          echo "=== CONFIG.LOG ==="
+          cat ffmpeg_src/ffbuild/config.log || echo "config.log not found"
 
-      - name: Zip Artifacts
-        run: Compress-Archive -Path dist/* -DestinationPath ffmpeg-portable-${{ needs.check_version.outputs.version }}.zip
+      - name: Package SDK (Headers + DLLs + Libs)
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist/bin dist/include dist/lib
+          
+          # 1. Copy Headers (From make install)
+          cp -r install/include/* dist/include/
+          
+          # 2. Copy DLLs (From make install)
+          cp install/bin/*.dll dist/bin/
+          
+          # 3. Smart Bundle
+          # Finds system DLLs (vulkan, opus) and copies them to bin/
+          ldd install/bin/avcodec-*.dll | grep '/ucrt64/bin/' | awk '{print $3}' | sort | uniq | xargs -I '{}' cp '{}' dist/bin/
+          
+          # 4. MSVC Linker Fix
+          # Copies the MSVC-compatible .lib files generated in the source tree
+          echo "Copying MSVC .lib files..."
+          cp ffmpeg_src/libavcodec/avcodec.lib       dist/lib/
+          cp ffmpeg_src/libavdevice/avdevice.lib     dist/lib/
+          cp ffmpeg_src/libavfilter/avfilter.lib     dist/lib/
+          cp ffmpeg_src/libavformat/avformat.lib     dist/lib/
+          cp ffmpeg_src/libavutil/avutil.lib         dist/lib/
+          cp ffmpeg_src/libswresample/swresample.lib dist/lib/
+          cp ffmpeg_src/libswscale/swscale.lib       dist/lib/
+
+      - name: Zip SDK
+        run: Compress-Archive -Path dist/* -DestinationPath ffmpeg-sdk-${{ needs.check_version.outputs.version }}.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.check_version.outputs.version }}
-          name: FFmpeg ${{ needs.check_version.outputs.version }} (Portable Commercial)
-          files: ffmpeg-portable-${{ needs.check_version.outputs.version }}.zip
+          name: FFmpeg SDK ${{ needs.check_version.outputs.version }} (Portable + MSVC)
+          files: ffmpeg-sdk-${{ needs.check_version.outputs.version }}.zip
           draft: false
           prerelease: false
         env:
