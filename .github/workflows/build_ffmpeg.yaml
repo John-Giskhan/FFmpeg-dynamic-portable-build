@@ -87,7 +87,7 @@ jobs:
             --enable-decoder=h264 --enable-decoder=hevc --enable-decoder=vp9 --enable-decoder=vp8 --enable-decoder=opus \
             --enable-decoder=av1 --enable-decoder=libdav1d \
             --enable-hwaccel=h264_nvdec --enable-hwaccel=hevc_nvdec --enable-hwaccel=av1_nvdec --enable-hwaccel=vp9_nvdec \
-            --enable-hwaccel=h264_vulkan --enable-hwaccel=hevc_vulkan --enable-hwaccel=av1_vulkan --enable-hwaccel=vp9_vulkan --enable-hwaccel=cuda --enable-filter=scale_cuda --enable-libnpp --enable-cuda-nvcc \
+            --enable-hwaccel=h264_vulkan --enable-hwaccel=hevc_vulkan --enable-hwaccel=av1_vulkan --enable-hwaccel=vp9_vulkan --enable-hwaccel=cuda --enable-filter=scale_cuda --enable-libnpp \
             --enable-filter=scale --enable-filter=scale_vulkan --enable-filter=format --enable-filter=libplacebo \
             --enable-avcodec --enable-avdevice --enable-avfilter --enable-avformat --enable-swresample --enable-swscale \
             --enable-libvpx --enable-libopus --enable-libsvtav1 --enable-libdav1d \
