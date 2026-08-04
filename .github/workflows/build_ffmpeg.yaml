@@ -21,10 +21,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # 1. Fetch tags, filtering for 'n7.1' style
-          LATEST_TAG=$(git ls-remote --tags --refs --sort='v:refname' https://git.ffmpeg.org/ffmpeg.git 'refs/tags/n*' \
-            | awk -F/ '{print $3}' \
-            | grep -E '^n[0-9]+\.[0-9]+(\.[0-9]+)?$' \
-            | tail -n1)
+          # git.ffmpeg.org resets connections intermittently; fall back to the
+          # project's GitHub mirror rather than failing the nightly.
+          for url in https://git.ffmpeg.org/ffmpeg.git https://github.com/FFmpeg/FFmpeg.git; do
+            LATEST_TAG=$(git ls-remote --tags --refs --sort='v:refname' "$url" 'refs/tags/n*' \
+              | awk -F/ '{print $3}' \
+              | grep -E '^n[0-9]+\.[0-9]+(\.[0-9]+)?$' \
+              | tail -n1) || true
+            [ -n "$LATEST_TAG" ] && { echo "Tags from $url"; break; }
+            echo "::warning::Tag lookup failed at $url"
+          done
           
           if [ -z "$LATEST_TAG" ]; then
             echo "Error: Could not find tag."
@@ -72,7 +78,14 @@ jobs:
       - name: Compile FFmpeg
         shell: msys2 {0}
         run: |
-          git clone --depth 1 --branch ${{ needs.check_version.outputs.version }} https://git.ffmpeg.org/ffmpeg.git ffmpeg_src && cd ffmpeg_src && \
+          for url in https://git.ffmpeg.org/ffmpeg.git https://github.com/FFmpeg/FFmpeg.git; do
+            echo "Cloning ${{ needs.check_version.outputs.version }} from $url"
+            git clone --depth 1 --branch ${{ needs.check_version.outputs.version }} "$url" ffmpeg_src && break
+            echo "::warning::Clone failed at $url"
+            rm -rf ffmpeg_src
+          done
+          test -d ffmpeg_src || { echo "::error::Could not clone FFmpeg from any source"; exit 1; }
+          cd ffmpeg_src && \
           ./configure --prefix=../install --arch=x86_64 --target-os=mingw64 \
             --enable-shared --disable-static --disable-programs --disable-doc --disable-debug --disable-everything \
             --disable-gpl --disable-nonfree --enable-version3 \
