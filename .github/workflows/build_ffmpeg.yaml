@@ -42,13 +42,16 @@ jobs:
             -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/$LATEST_TAG")
           
+          # Always emit the version: a manual dispatch builds even when
+          # should_build is false, and an empty --branch breaks the clone.
+          echo "version=$LATEST_TAG" >> $GITHUB_OUTPUT
+
           if [ "$HTTP_CODE" == "200" ]; then
             echo "✅ Release $LATEST_TAG exists. SKIPPING BUILD."
             echo "should_build=false" >> $GITHUB_OUTPUT
           else
             echo "🚀 New version $LATEST_TAG found. STARTING BUILD."
             echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "version=$LATEST_TAG" >> $GITHUB_OUTPUT
           fi
 
   build:
